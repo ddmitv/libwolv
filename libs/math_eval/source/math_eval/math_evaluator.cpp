@@ -273,20 +273,30 @@ namespace wolv::math_eval {
     std::optional<std::queue<typename MathEvaluator<T>::Token>> MathEvaluator<T>::parseInput(std::string input) {
         std::queue<Token> inputQueue;
 
+        static constexpr auto isValue = [](const Token& t) {
+            return t.type == TokenType::Number ||
+                   t.type == TokenType::Variable ||
+                   t.type == TokenType::Function ||
+                   (t.type == TokenType::Bracket && t.bracketType == BracketType::Right);
+        };
+
         const char *prevPos = input.data();
         for (const char *pos = prevPos; *pos != '\0';) {
             std::errc parse_err{};
             if (const auto number = parseNumber<T>(&pos, input.data() + input.size(), parse_err)) {
+                if (!inputQueue.empty() && isValue(inputQueue.back())) {
+                    this->setError("Invalid syntax!");
+                    return std::nullopt;
+                }
                 inputQueue.push(Token { .type = TokenType::Number, .number = *number, .name = "", .arguments = { } });
             } else if (parse_err == std::errc::result_out_of_range) {
                 this->setError("Number out of range!");
                 return std::nullopt;
             } else if (*pos == '(') {
-                if (!inputQueue.empty() && !(inputQueue.back().type == TokenType::Operator || (inputQueue.back().type == TokenType::Bracket && inputQueue.back().bracketType == BracketType::Left))) {
+                if (!inputQueue.empty() && isValue(inputQueue.back())) {
                     this->setError("Invalid syntax!");
                     return std::nullopt;
                 }
-
                 inputQueue.push(Token { .type = TokenType::Bracket, .bracketType = BracketType::Left, .name = "", .arguments = { } });
                 pos++;
             } else if (*pos == ')') {
@@ -322,7 +332,7 @@ namespace wolv::math_eval {
                         std::vector<std::string> expressions;
                         expressions.emplace_back();
 
-                        while (*pos != 0x00) {
+                        while (*pos != '\0') {
                             if (*pos == '(') depth++;
                             else if (*pos == ')') depth--;
 
@@ -370,10 +380,20 @@ namespace wolv::math_eval {
                         }
 
                         token.type = TokenType::Function;
+
+                        if (!inputQueue.empty() && isValue(inputQueue.back())) {
+                            this->setError("Invalid syntax!");
+                            return std::nullopt;
+                        }
                         inputQueue.push(token);
 
                     } else {
                         token.type = TokenType::Variable;
+
+                        if (!inputQueue.empty() && isValue(inputQueue.back())) {
+                            this->setError("Invalid syntax!");
+                            return std::nullopt;
+                        }
                         inputQueue.push(token);
                     }
                 }
@@ -536,15 +556,18 @@ namespace wolv::math_eval {
                     return std::nullopt;
                 }
             } else if (front.type == TokenType::Function) {
-                if (!this->m_functions[front.name]) {
-                    this->setError("Unknown function called!");
+                const auto it = this->m_functions.find(front.name);
+                if (it == this->m_functions.end()) {
+                    this->setError("Unknown function \"" + front.name + "\"!");
                     return std::nullopt;
                 }
+                const auto result = it->second(front.arguments);
 
-                auto result = this->m_functions[front.name](front.arguments);
-
-                if (result.has_value())
-                    evaluationStack.push(result.value());
+                if (!result.has_value()) {
+                    this->setError("Invalid argument for function \"" + front.name + "\"!");
+                    return std::nullopt;
+                }
+                evaluationStack.push(*result);
             } else {
                 this->setError("Parenthesis in postfix expression!");
                 return std::nullopt;

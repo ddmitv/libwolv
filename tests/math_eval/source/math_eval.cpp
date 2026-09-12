@@ -357,8 +357,8 @@ TEST_SEQUENCE("Arithmetic") {
         wolv::math_eval::MathEvaluator<long double> eval;
 
         TEST_ASSERT(eval.evaluate("1+1") == 2.L);
-        TEST_ASSERT(eval.evaluate("3 4 +") == 7.L); // bug
-        TEST_ASSERT(eval.evaluate("3 5+") == 8.L); // bug
+        TEST_ASSERT(eval.evaluate("3 4 +") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("3 5+") == std::nullopt);
         TEST_ASSERT(eval.evaluate("1 + 2") == 3.L);
         TEST_ASSERT(eval.evaluate("1+2+3+4+5+6+7+8+9") == 45.L);
         TEST_ASSERT(expect_approx_eq(eval.evaluate("1.2+3.4+5.6+7.8+9.0"), 27.L));
@@ -371,7 +371,7 @@ TEST_SEQUENCE("Arithmetic") {
         TEST_ASSERT(eval.evaluate("1+0x1p100") == 0x1p100);
 
         TEST_ASSERT(eval.evaluate(" 7 - 10") == -3.L);
-        TEST_ASSERT(eval.evaluate("2 1 -") == 1.L); // bug
+        TEST_ASSERT(eval.evaluate("2 1 -") == std::nullopt);
         TEST_ASSERT(eval.evaluate("1-2-3-4") == -8.L);
         TEST_ASSERT(eval.evaluate("0x1p200 - 0x1p50") == 0x1p200L);
 
@@ -380,8 +380,8 @@ TEST_SEQUENCE("Arithmetic") {
         TEST_ASSERT(eval.evaluate("2(3)") == std::nullopt);
         TEST_ASSERT(eval.evaluate("(4)(6)") == std::nullopt);
 
-        TEST_ASSERT(eval.evaluate("1 2 + 3 *") == 7.L); // bug
-        TEST_ASSERT(eval.evaluate("1 2 3 + *") == 7.L); // bug
+        TEST_ASSERT(eval.evaluate("1 2 + 3 *") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("1 2 3 + *") == std::nullopt);
 
         TEST_ASSERT(eval.evaluate("3.5 / 1") == 3.5L);
         TEST_ASSERT(eval.evaluate("234 / 1e10000") == std::nullopt);
@@ -426,6 +426,9 @@ TEST_SEQUENCE("Arithmetic") {
         TEST_ASSERT(eval.evaluate("5--") == std::nullopt);
         TEST_ASSERT(eval.evaluate("*5") == std::nullopt);
         TEST_ASSERT(eval.evaluate("5*") == std::nullopt);
+
+        TEST_ASSERT(eval.evaluate("(1+2)3") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("(1+2)3+") == std::nullopt);
     }
 
     {
@@ -660,6 +663,8 @@ TEST_SEQUENCE("Variables")
 
         TEST_ASSERT(eval.evaluate("2pi") == std::nullopt);
         TEST_ASSERT(eval.evaluate("pi e") == std::nullopt);
+
+        TEST_ASSERT(eval.evaluate("(1+2)pi") == std::nullopt);
     }
 
     {
@@ -733,14 +738,15 @@ TEST_SEQUENCE("Functions")
     TEST_ASSERT(eval.evaluate("sqrt(") == std::nullopt);
     TEST_ASSERT(eval.evaluate("sqrt)") == std::nullopt);
     TEST_ASSERT(eval.evaluate("sqrt(1, 2)") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("(4)sqrt(4)") == std::nullopt);
     TEST_ASSERT(eval.evaluate("log(1, 2, 3)") == std::nullopt);
 
-    TEST_ASSERT(eval.evaluate("5sqrt()") == 5.L); // bug
-    TEST_ASSERT(eval.evaluate("sqrt()2.50") == 2.5L); // bug
-    TEST_ASSERT(eval.evaluate("(1 sqrt()sqrt()  sqrt())") == 1.L); // bug
-    TEST_ASSERT(eval.evaluate("1 sqrt() 2 +") == 3.L); // bug
-    TEST_ASSERT(eval.evaluate("sqrt()5sqrt()") == 5.L); // bug
-    TEST_ASSERT(eval.evaluate("10 +sqrt()5") == 15.L); // bug
+    TEST_ASSERT(eval.evaluate("5sqrt()") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("sqrt()2.50") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("(1 sqrt()sqrt()  sqrt())") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("1 sqrt() 2 +") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("sqrt()5sqrt()") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("10 +sqrt()5") == std::nullopt);
 
     eval.setFunction("add", [](auto args) { return args[0] + args[1]; }, 2, 2);
     TEST_ASSERT(eval.evaluate("add(1, 2)") == 3.L);
