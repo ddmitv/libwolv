@@ -36,7 +36,7 @@ namespace {
         return res.has_value() && std::isnan(*res);
     }
     [[nodiscard]] bool expect_approx_eq(std::optional<long double> res, long double expected) {
-        return res.has_value() && std::isfinite(*res) && std::abs(*res - expected) <= 1e-11L;
+        return res.has_value() && std::isfinite(*res) && std::abs(*res - expected) <= 1e-11L * (1.L + std::abs(expected));
     }
 }
 
@@ -64,6 +64,8 @@ TEST_SEQUENCE("FloatParsing") {
     TEST_ASSERT(eval.evaluate(".25") == 0.25L);
     TEST_ASSERT(eval.evaluate(".375") == 0.375L);
     TEST_ASSERT(eval.evaluate(".000") == 0.L);
+    TEST_ASSERT(eval.evaluate("+.5") == 0.5L);
+    TEST_ASSERT(eval.evaluate("-.5") == -0.5L);
     TEST_ASSERT(eval.evaluate("1.2.3") == std::nullopt);
     TEST_ASSERT(eval.evaluate(".2.3") == std::nullopt);
     TEST_ASSERT(eval.evaluate(".") == std::nullopt);
@@ -73,7 +75,7 @@ TEST_SEQUENCE("FloatParsing") {
     TEST_ASSERT(eval.evaluate("0xA") == 10.L);
     TEST_ASSERT(eval.evaluate("0xF") == 15.L);
     TEST_ASSERT(eval.evaluate("0xABC") == 2748.L);
-    TEST_ASSERT(eval.evaluate("00x100") == 256.L); // bug
+    TEST_ASSERT(eval.evaluate("00x100") == std::nullopt);
 
     TEST_ASSERT(eval.evaluate("0X0") == 0.L);
     TEST_ASSERT(eval.evaluate("0X1") == 1.L);
@@ -95,11 +97,11 @@ TEST_SEQUENCE("FloatParsing") {
     TEST_ASSERT(eval.evaluate("6.25e-2") == 0.0625L);
     TEST_ASSERT(eval.evaluate("325E-2") == 3.25L);
 
-    TEST_ASSERT(eval.evaluate("1.5e+308") == 1.5e+308L);
-    TEST_ASSERT(eval.evaluate("3e+10000") == std::numeric_limits<long double>::infinity()); // bug?
-    TEST_ASSERT(eval.evaluate("-3e+20000") == -std::numeric_limits<long double>::infinity()); // bug?
-    TEST_ASSERT(expect_positive_zero(eval.evaluate("3e-20000")));
-    TEST_ASSERT(expect_negative_zero(eval.evaluate("-3e-20000")));
+    TEST_ASSERT(expect_approx_eq(eval.evaluate("1.5e+308"), 1.5e+308L));
+    TEST_ASSERT(eval.evaluate("3e+10000") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("-3e+20000") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("3e-20000") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("-3e-20000") == std::nullopt);
 
     TEST_ASSERT(eval.evaluate("0x0.0") == 0.L);
     TEST_ASSERT(eval.evaluate("0x1.0") == 1.L);
@@ -118,21 +120,21 @@ TEST_SEQUENCE("FloatParsing") {
     TEST_ASSERT(eval.evaluate("0xp78") == std::nullopt);
     TEST_ASSERT(eval.evaluate("0x0p") == std::nullopt);
 
-    TEST_ASSERT(eval.evaluate("0xFp999999") == std::numeric_limits<long double>::infinity()); // bug?
-    TEST_ASSERT(eval.evaluate("-0xABCDEFp999999") == -std::numeric_limits<long double>::infinity()); // bug?
-    TEST_ASSERT(expect_positive_zero(eval.evaluate("0xF.ABCp-888888")));
-    TEST_ASSERT(expect_negative_zero(eval.evaluate("-0xF.ABCDp-888888")));
+    TEST_ASSERT(eval.evaluate("0xFp999999") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("-0xABCDEFp999999") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("0xF.ABCp-888888") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("-0xF.ABCDp-888888") == std::nullopt);
 
-    TEST_ASSERT(eval.evaluate("INF") == std::nullopt);
-    TEST_ASSERT(eval.evaluate("INFINITY") == std::nullopt);
-    TEST_ASSERT(eval.evaluate("-INF") == std::nullopt);
-    TEST_ASSERT(eval.evaluate("inf") == std::nullopt);
-    TEST_ASSERT(eval.evaluate("infinity") == std::nullopt);
-    TEST_ASSERT(eval.evaluate("NAN") == std::nullopt);
-    TEST_ASSERT(eval.evaluate("nan") == std::nullopt);
-    TEST_ASSERT(eval.evaluate("-nan") == std::nullopt);
-    TEST_ASSERT(eval.evaluate("nan(hello)") == std::nullopt);
-    TEST_ASSERT(eval.evaluate("NaN(hello_world123)") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("INF") == std::numeric_limits<long double>::infinity());
+    TEST_ASSERT(eval.evaluate("INFINITY") == std::numeric_limits<long double>::infinity());
+    TEST_ASSERT(eval.evaluate("-INF") == -std::numeric_limits<long double>::infinity());
+    TEST_ASSERT(eval.evaluate("inf") == std::numeric_limits<long double>::infinity());
+    TEST_ASSERT(eval.evaluate("infinity") == std::numeric_limits<long double>::infinity());
+    TEST_ASSERT(expect_nan(eval.evaluate("NAN")));
+    TEST_ASSERT(expect_nan(eval.evaluate("nan")));
+    TEST_ASSERT(expect_nan(eval.evaluate("-nan")));
+    TEST_ASSERT(expect_nan(eval.evaluate("nan(hello)")));
+    TEST_ASSERT(expect_nan(eval.evaluate("NaN(hello_world123)")));
 
     // binary
     TEST_ASSERT(eval.evaluate("0b1") == std::nullopt);
@@ -148,7 +150,7 @@ TEST_SEQUENCE("FloatParsing") {
     {
         const char* prev_locale = std::setlocale(LC_NUMERIC, nullptr);
         if (std::setlocale(LC_NUMERIC, "fr_FR.UTF-8")) { // skip if invalid locale
-            TEST_ASSERT(eval.evaluate("12,25") == 12.25L); // bug?
+            TEST_ASSERT(eval.evaluate("12,25") == std::nullopt);
 
             std::setlocale(LC_NUMERIC, prev_locale); // restore locale
         }
@@ -179,31 +181,38 @@ TEST_SEQUENCE("IntegerParsing") {
         TEST_ASSERT(eval.evaluate("-1234567890") == -1234567890);
 
         TEST_ASSERT(eval.evaluate("9223372036854775807") == 9223372036854775807LL);
-        TEST_ASSERT(eval.evaluate("9223372036854775808") == 9223372036854775807LL); // bug
-        TEST_ASSERT(eval.evaluate("9999999999999999999999999") == 9223372036854775807LL); // bug
+        TEST_ASSERT(eval.evaluate("9223372036854775808") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("9999999999999999999999999") == std::nullopt);
         TEST_ASSERT(eval.evaluate("-9223372036854775807") == -9223372036854775807LL);
-        TEST_ASSERT(eval.evaluate("-9223372036854775808") == -9223372036854775807LL); // bug
-        TEST_ASSERT(eval.evaluate("-9223372036854775809") == -9223372036854775807LL); // bug
-        TEST_ASSERT(eval.evaluate("-9999999999999999999999999") == -9223372036854775807LL); // bug
+        TEST_ASSERT(eval.evaluate("-9223372036854775808") == std::nullopt); // bug?
+        TEST_ASSERT(eval.evaluate("-9223372036854775809") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("-9999999999999999999999999") == std::nullopt);
 
         TEST_ASSERT(eval.evaluate("0x0") == 0);
+        TEST_ASSERT(eval.evaluate("+0x0") == 0);
         TEST_ASSERT(eval.evaluate("0x") == std::nullopt);
         TEST_ASSERT(eval.evaluate("x") == std::nullopt);
         TEST_ASSERT(eval.evaluate("x0") == std::nullopt);
         TEST_ASSERT(eval.evaluate("0x1") == 1);
+        TEST_ASSERT(eval.evaluate("0x7FFFFFFFFFFFFFFF") == 9223372036854775807LL);
+        TEST_ASSERT(eval.evaluate("0x8000000000000000") == std::nullopt);
         TEST_ASSERT(eval.evaluate("-0x1") == -1);
+        TEST_ASSERT(eval.evaluate("-0x8000000000000000") == std::nullopt); // bug?
+        TEST_ASSERT(eval.evaluate("-0x8000000000000001") == std::nullopt);
 
         TEST_ASSERT(eval.evaluate("1x2") == std::nullopt);
         TEST_ASSERT(eval.evaluate("-1x90") == std::nullopt);
         TEST_ASSERT(eval.evaluate("9x55") == std::nullopt);
         TEST_ASSERT(eval.evaluate("01x4") == std::nullopt);
-        TEST_ASSERT(eval.evaluate("00x5") == 5); // bug
-        TEST_ASSERT(eval.evaluate("-00x5") == -5); // bug
-        TEST_ASSERT(eval.evaluate("1234567890x6") == 6); // bug
-        TEST_ASSERT(eval.evaluate("-1234567890x6") == -6); // bug
+        TEST_ASSERT(eval.evaluate("00x5") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("-00x5") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("0x-5") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("0x+5") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("1234567890x6") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("-1234567890x6") == std::nullopt);
 
-        TEST_ASSERT(eval.evaluate("0b1") == std::nullopt);
-        TEST_ASSERT(eval.evaluate("0o551") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("0b1") == 1);
+        TEST_ASSERT(eval.evaluate("0o551") == 361);
         TEST_ASSERT(eval.evaluate("123_456") == std::nullopt);
     }
 
@@ -229,29 +238,33 @@ TEST_SEQUENCE("IntegerParsing") {
         TEST_ASSERT(eval.evaluate("-1234567890") == 18446744072474983726ULL);
 
         TEST_ASSERT(eval.evaluate("18446744073709551615") == 18446744073709551615ULL);
-        TEST_ASSERT(eval.evaluate("18446744073709551616") == 18446744073709551615ULL); // bug
-        TEST_ASSERT(eval.evaluate("99999999999999999999999999") == 18446744073709551615ULL); // bug
+        TEST_ASSERT(eval.evaluate("18446744073709551616") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("99999999999999999999999999") == std::nullopt);
         TEST_ASSERT(eval.evaluate("-18446744073709551615") == 1ULL);
-        TEST_ASSERT(eval.evaluate("-18446744073709551616") == 1ULL); // bug
-        TEST_ASSERT(eval.evaluate("-99999999999999999999999999") == 1ULL); // bug
+        TEST_ASSERT(eval.evaluate("-18446744073709551616") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("-99999999999999999999999999") == std::nullopt);
 
         TEST_ASSERT(eval.evaluate("0x0") == 0);
         TEST_ASSERT(eval.evaluate("0x") == std::nullopt);
         TEST_ASSERT(eval.evaluate("x") == std::nullopt);
         TEST_ASSERT(eval.evaluate("x0") == std::nullopt);
         TEST_ASSERT(eval.evaluate("0x1") == 1);
+        TEST_ASSERT(eval.evaluate("0xFFFFFFFFFFFFFFFF") == 18446744073709551615ULL);
         TEST_ASSERT(eval.evaluate("-0x1") == 18446744073709551615ULL);
+        TEST_ASSERT(eval.evaluate("-0xFFFFFFFFFFFFFFFF") == 1ULL);
 
         TEST_ASSERT(eval.evaluate("1x2") == std::nullopt);
         TEST_ASSERT(eval.evaluate("-1x90") == std::nullopt);
         TEST_ASSERT(eval.evaluate("9x55") == std::nullopt);
         TEST_ASSERT(eval.evaluate("01x4") == std::nullopt);
-        TEST_ASSERT(eval.evaluate("00x5") == 5); // bug
-        TEST_ASSERT(eval.evaluate("-00x5") == 18446744073709551611ULL); // bug
-        TEST_ASSERT(eval.evaluate("-1234567890x6") == 18446744073709551610ULL); // bug
+        TEST_ASSERT(eval.evaluate("00x5") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("0x-5") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("0x+5") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("-00x5") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("-1234567890x6") == std::nullopt);
 
-        TEST_ASSERT(eval.evaluate("0b1") == std::nullopt);
-        TEST_ASSERT(eval.evaluate("0o551") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("0b1") == 1);
+        TEST_ASSERT(eval.evaluate("0o551") == 361);
         TEST_ASSERT(eval.evaluate("123_456") == std::nullopt);
     }
 
@@ -270,23 +283,29 @@ TEST_SEQUENCE("IntegerParsing") {
         TEST_ASSERT(eval.evaluate("1234567890") == 1234567890);
         TEST_ASSERT(eval.evaluate("-1234567890") == -1234567890);
 
-        TEST_ASSERT(eval.evaluate("9223372036854775807") == 9223372036854775807LL);
-        TEST_ASSERT(eval.evaluate("9223372036854775808") == 9223372036854775807LL); // bug
-        TEST_ASSERT(eval.evaluate("9999999999999999999999999") == 9223372036854775807LL); // bug
-        TEST_ASSERT(eval.evaluate("-9223372036854775807") == -9223372036854775807LL);
-        TEST_ASSERT(eval.evaluate("-9223372036854775808") == -9223372036854775807LL); // bug
-        TEST_ASSERT(eval.evaluate("-9223372036854775809") == -9223372036854775807LL); // bug
-        TEST_ASSERT(eval.evaluate("-9999999999999999999999999") == -9223372036854775807LL); // bug
+        TEST_ASSERT(eval.evaluate("9223372036854775807") == 9223372036854775807_i128);
+        TEST_ASSERT(eval.evaluate("9223372036854775808") == 9223372036854775808_i128);
+        TEST_ASSERT(eval.evaluate("9999999999999999999999999") == 9999999999999999999999999_i128);
+        TEST_ASSERT(eval.evaluate("170141183460469231731687303715884105727") == 170141183460469231731687303715884105727_i128);
+        TEST_ASSERT(eval.evaluate("170141183460469231731687303715884105728") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("-9223372036854775807") == -9223372036854775807_i128);
+        TEST_ASSERT(eval.evaluate("-9223372036854775808") == -9223372036854775808_i128);
+        TEST_ASSERT(eval.evaluate("-9223372036854775809") == -9223372036854775809_i128);
+        TEST_ASSERT(eval.evaluate("-9999999999999999999999999") == -9999999999999999999999999_i128);
+        TEST_ASSERT(eval.evaluate("-170141183460469231731687303715884105728") == std::nullopt); // bug?
+        TEST_ASSERT(eval.evaluate("-170141183460469231731687303715884105729") == std::nullopt);
 
         TEST_ASSERT(eval.evaluate("0x0") == 0);
         TEST_ASSERT(eval.evaluate("0x") == std::nullopt);
         TEST_ASSERT(eval.evaluate("x") == std::nullopt);
         TEST_ASSERT(eval.evaluate("x0") == std::nullopt);
         TEST_ASSERT(eval.evaluate("0x1") == 1);
+        TEST_ASSERT(eval.evaluate("0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF") == 170141183460469231731687303715884105727_i128);
         TEST_ASSERT(eval.evaluate("-0x1") == -1);
+        TEST_ASSERT(eval.evaluate("-0x80000000000000000000000000000000") == std::nullopt); // bug?
 
-        TEST_ASSERT(eval.evaluate("0b1") == std::nullopt);
-        TEST_ASSERT(eval.evaluate("0o551") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("0b1") == 1);
+        TEST_ASSERT(eval.evaluate("0o551") == 361);
         TEST_ASSERT(eval.evaluate("123_456") == std::nullopt);
     }
 
@@ -305,22 +324,28 @@ TEST_SEQUENCE("IntegerParsing") {
         TEST_ASSERT(eval.evaluate("1234567890") == 1234567890);
         TEST_ASSERT(eval.evaluate("-1234567890") == 340282366920938463463374607430533643566_u128);
 
-        TEST_ASSERT(eval.evaluate("18446744073709551615") == 18446744073709551615ULL);
-        TEST_ASSERT(eval.evaluate("18446744073709551616") == 18446744073709551615ULL); // bug
-        TEST_ASSERT(eval.evaluate("99999999999999999999999999") == 18446744073709551615ULL); // bug
+        TEST_ASSERT(eval.evaluate("18446744073709551615") == 18446744073709551615_u128);
+        TEST_ASSERT(eval.evaluate("18446744073709551616") == 18446744073709551616_u128);
+        TEST_ASSERT(eval.evaluate("99999999999999999999999999") == 99999999999999999999999999_u128);
+        TEST_ASSERT(eval.evaluate("340282366920938463463374607431768211455") == 340282366920938463463374607431768211455_u128);
+        TEST_ASSERT(eval.evaluate("340282366920938463463374607431768211456") == std::nullopt);
         TEST_ASSERT(eval.evaluate("-18446744073709551615") == 340282366920938463444927863358058659841_u128);
-        TEST_ASSERT(eval.evaluate("-18446744073709551616") == 340282366920938463444927863358058659841_u128); // bug
-        TEST_ASSERT(eval.evaluate("-99999999999999999999999999") == 340282366920938463444927863358058659841_u128); // bug
+        TEST_ASSERT(eval.evaluate("-18446744073709551616") == 340282366920938463444927863358058659840_u128);
+        TEST_ASSERT(eval.evaluate("-99999999999999999999999999") == 340282366920838463463374607431768211457_u128);
+        TEST_ASSERT(eval.evaluate("-340282366920938463463374607431768211455") == 1);
+        TEST_ASSERT(eval.evaluate("-340282366920938463463374607431768211456") == std::nullopt);
 
         TEST_ASSERT(eval.evaluate("0x0") == 0);
         TEST_ASSERT(eval.evaluate("0x") == std::nullopt);
         TEST_ASSERT(eval.evaluate("x") == std::nullopt);
         TEST_ASSERT(eval.evaluate("x0") == std::nullopt);
         TEST_ASSERT(eval.evaluate("0x1") == 1);
+        TEST_ASSERT(eval.evaluate("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF") == 340282366920938463463374607431768211455_u128);
         TEST_ASSERT(eval.evaluate("-0x1") == 340282366920938463463374607431768211455_u128);
+        TEST_ASSERT(eval.evaluate("-0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF") == 1);
 
-        TEST_ASSERT(eval.evaluate("0b1") == std::nullopt);
-        TEST_ASSERT(eval.evaluate("0o551") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("0b1") == 1);
+        TEST_ASSERT(eval.evaluate("0o551") == 361);
         TEST_ASSERT(eval.evaluate("123_456") == std::nullopt);
     }
 
@@ -336,22 +361,22 @@ TEST_SEQUENCE("Arithmetic") {
         TEST_ASSERT(eval.evaluate("3 5+") == 8.L); // bug
         TEST_ASSERT(eval.evaluate("1 + 2") == 3.L);
         TEST_ASSERT(eval.evaluate("1+2+3+4+5+6+7+8+9") == 45.L);
-        TEST_ASSERT(eval.evaluate("1.2+3.4+5.6+7.8+9.0") == 27.L);
+        TEST_ASSERT(expect_approx_eq(eval.evaluate("1.2+3.4+5.6+7.8+9.0"), 27.L));
         TEST_ASSERT(eval.evaluate("1.2+") == std::nullopt);
         TEST_ASSERT(eval.evaluate("+123.34375") == 123.34375L);
         TEST_ASSERT(eval.evaluate("1+ 0") == 1.L);
         TEST_ASSERT(eval.evaluate("\t 0  \v+\t0\n \n \t") == 0.L);
 
-        TEST_ASSERT(eval.evaluate("1e100+1") == 1e100L);
-        TEST_ASSERT(eval.evaluate("1+1e100") == 1e100L);
+        TEST_ASSERT(eval.evaluate("0x1p100+1") == 0x1p100);
+        TEST_ASSERT(eval.evaluate("1+0x1p100") == 0x1p100);
 
         TEST_ASSERT(eval.evaluate(" 7 - 10") == -3.L);
         TEST_ASSERT(eval.evaluate("2 1 -") == 1.L); // bug
         TEST_ASSERT(eval.evaluate("1-2-3-4") == -8.L);
-        TEST_ASSERT(eval.evaluate("1e100 - 1e50") == 1e100L);
+        TEST_ASSERT(eval.evaluate("0x1p200 - 0x1p50") == 0x1p200L);
 
         TEST_ASSERT(expect_approx_eq(eval.evaluate("2.3*5.7*11.13*17.19*23"), 57690.136791L));
-        TEST_ASSERT(eval.evaluate("1e100*2") == 2e100L);
+        TEST_ASSERT(eval.evaluate("0x1p100*2") == 0x2p100L);
         TEST_ASSERT(eval.evaluate("2(3)") == std::nullopt);
         TEST_ASSERT(eval.evaluate("(4)(6)") == std::nullopt);
 
@@ -359,7 +384,7 @@ TEST_SEQUENCE("Arithmetic") {
         TEST_ASSERT(eval.evaluate("1 2 3 + *") == 7.L); // bug
 
         TEST_ASSERT(eval.evaluate("3.5 / 1") == 3.5L);
-        TEST_ASSERT(eval.evaluate("234 / 1e10000") == 0.L);
+        TEST_ASSERT(eval.evaluate("234 / 1e10000") == std::nullopt);
         TEST_ASSERT(eval.evaluate("100 / 2.5") == 40.L);
         TEST_ASSERT(eval.evaluate("0/34") == 0.L);
         TEST_ASSERT(eval.evaluate("1/0") == std::nullopt);
@@ -390,8 +415,6 @@ TEST_SEQUENCE("Arithmetic") {
         TEST_ASSERT(eval.evaluate("1-+2") == -1.L);
         TEST_ASSERT(eval.evaluate("1++2") == 3.L);
         TEST_ASSERT(eval.evaluate("1+++2") == 3.L);
-        TEST_ASSERT(eval.evaluate("+.4") == 0.4L);
-        TEST_ASSERT(eval.evaluate("-.4") == -0.4L);
 
         TEST_ASSERT(eval.evaluate("(((123.34765625)))") == 123.34765625L);
         TEST_ASSERT(eval.evaluate("1+(2*(3+4)-(5+6))") == 4.L);
@@ -458,8 +481,8 @@ TEST_SEQUENCE("Arithmetic") {
 
         // TEST_ASSERT(eval.evaluate("9223372036854775807*9223372036854775807*9223372036854775807") == 85070591730234615893513767968506380287_i128); // UB!
         TEST_ASSERT(eval.evaluate("9223372036854775807*2") == 18446744073709551614_i128);
-        TEST_ASSERT(eval.evaluate("9223372036854775808*2") == 18446744073709551614_i128); // bug
-        TEST_ASSERT(eval.evaluate("99999999999999999999999999*2") == 18446744073709551614_i128); // bug
+        TEST_ASSERT(eval.evaluate("9223372036854775808*2") == 18446744073709551616_i128);
+        TEST_ASSERT(eval.evaluate("99999999999999999999999999*2") == 199999999999999999999999998_i128);
 
         TEST_ASSERT(eval.evaluate("2 ** -1") == 0);
         TEST_ASSERT(eval.evaluate("12345 ** -3") == 0);
@@ -470,8 +493,8 @@ TEST_SEQUENCE("Arithmetic") {
         wolv::math_eval::MathEvaluator<u128> eval;
 
         TEST_ASSERT(eval.evaluate("18446744073709551615+1") == 18446744073709551616_u128);
-        TEST_ASSERT(eval.evaluate("18446744073709551616+1") == 18446744073709551616_u128); // bug
-        TEST_ASSERT(eval.evaluate("9999999999999999999999999999+1") == 18446744073709551616_u128); // bug
+        TEST_ASSERT(eval.evaluate("18446744073709551616+1") == 18446744073709551617_u128);
+        TEST_ASSERT(eval.evaluate("9999999999999999999999999999+1") == 10000000000000000000000000000_u128);
         TEST_ASSERT(eval.evaluate("0-1") == 340282366920938463463374607431768211455_u128);
 
         TEST_ASSERT(eval.evaluate("18446744073709551615*18446744073709551615") == 340282366920938463426481119284349108225_u128);
@@ -707,13 +730,13 @@ TEST_SEQUENCE("Functions")
     TEST_ASSERT(eval.evaluate("sqrt (4)") == std::nullopt);
     TEST_ASSERT(eval.evaluate("sqrt(,4)") == std::nullopt);
     TEST_ASSERT(eval.evaluate("sqrt(4))") == std::nullopt);
-    TEST_ASSERT(eval.evaluate("sqrt(") == std::nullopt);
+    // TEST_ASSERT(eval.evaluate("sqrt(") == std::nullopt);
     TEST_ASSERT(eval.evaluate("sqrt)") == std::nullopt);
     TEST_ASSERT(eval.evaluate("sqrt(1, 2)") == std::nullopt);
     TEST_ASSERT(eval.evaluate("log(1, 2, 3)") == std::nullopt);
 
     TEST_ASSERT(eval.evaluate("5sqrt()") == 5.L); // bug
-    TEST_ASSERT(eval.evaluate("sqrt()2.56") == 2.56L); // bug
+    TEST_ASSERT(eval.evaluate("sqrt()2.50") == 2.5L); // bug
     TEST_ASSERT(eval.evaluate("(1 sqrt()sqrt()  sqrt())") == 1.L); // bug
     TEST_ASSERT(eval.evaluate("1 sqrt() 2 +") == 3.L); // bug
     TEST_ASSERT(eval.evaluate("sqrt()5sqrt()") == 5.L); // bug

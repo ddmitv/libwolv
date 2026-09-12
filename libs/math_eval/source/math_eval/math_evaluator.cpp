@@ -3,17 +3,25 @@
 #include <wolv/utils/core.hpp>
 
 #include <bit>
+#include <charconv>
 #include <string>
 #include <queue>
 #include <stack>
 #include <cmath>
 #include <optional>
 #include <numbers>
+#include <concepts>
+#include <algorithm>
+#include <cctype>
+#include <limits>
+#include <string_view>
 
-namespace wolv::math_eval {
+namespace
+{
+    using wolv::u8;
 
     template<typename T, typename U>
-        [[nodiscard]] auto powi(T base, U exp) {
+    [[nodiscard]] auto powi(T base, U exp) {
         using ResultType = decltype(T{} * U{});
 
         if (exp < 0)
@@ -30,6 +38,141 @@ namespace wolv::math_eval {
         return result;
     }
 
+    // could be in wolv/utils/string.hpp
+    template<typename T = char>
+    [[nodiscard]] constexpr std::basic_string_view<T> trim_ascii_start(std::basic_string_view<T> s) noexcept {
+        s.remove_prefix(std::min(s.find_first_not_of(" \t\n\r\f\v"), s.size()));
+        return s;
+    }
+
+    // for MSVC and ClangCL compilers that do not support __int128_t or std::from_chars with __int128_t
+#if !defined(LIBWOLV_BUILTIN_UINT128)
+    [[nodiscard]] constexpr u8 digitValue(const char c) noexcept {
+        if (c >= '0' && c <= '9') { return c - '0'; }
+        if (c >= 'a' && c <= 'z') { return c - 'a' + 10; }
+        if (c >= 'A' && c <= 'Z') { return c - 'A' + 10; }
+        return 255;
+    }
+
+    template<typename T> requires std::same_as<T, wolv::i128> || std::same_as<T, wolv::u128>
+    [[nodiscard]] std::from_chars_result parseWideInteger(const char* start, const char* const end, T& value, const int base) {
+        using U = wolv::u128;
+        constexpr U umax = std::numeric_limits<U>::max();
+
+        U riskyVal;
+        U maxDigit;
+        if constexpr (std::numeric_limits<T>::is_signed) {
+            constexpr U imax = umax >> 1; // 2^127 - 1
+            riskyVal = imax / static_cast<U>(base);
+            maxDigit = imax % static_cast<U>(base);
+        } else {
+            riskyVal = umax / static_cast<U>(base);
+            maxDigit = umax % static_cast<U>(base);
+        }
+        U acc = 0;
+        bool overflowed = false;
+        const char* current = start;
+
+        for (; current != end; ++current) {
+            const u8 digit = digitValue(*current);
+            if (digit >= base) { break; }
+
+            if (acc < riskyVal || (acc == riskyVal && static_cast<U>(digit) <= maxDigit)) {
+                acc = acc * static_cast<U>(base) + static_cast<U>(digit);
+            } else {
+                overflowed = true; // keep going, current must point to first char not matching the pattern
+            }
+        }
+        if (current == start) { return {.ptr = start, .ec = std::errc::invalid_argument}; }
+        if (overflowed) { return {.ptr = current, .ec = std::errc::result_out_of_range}; }
+        value = static_cast<T>(acc);
+        return {.ptr = current, .ec = std::errc{}};
+    }
+#endif
+    // cannot use std::expected because libstdc++ version that Github Action runner is using doesn't provide the header <expected> (ubuntu-22.04, GCC 11.4.0)
+
+    template<typename T> requires std::integral<T> || std::same_as<T, wolv::i128> || std::same_as<T, wolv::u128>
+    [[nodiscard]] std::optional<T> parseNumber(const char** const str_ptr, const char* const end_pos, std::errc& out_err) noexcept {
+        auto str = trim_ascii_start(std::string_view{*str_ptr, end_pos});
+        int base = 10;
+
+        // minus/plus signs are handled in minus/plus unary operations
+        if (str.starts_with('+') || str.starts_with('-')) {
+            out_err = std::errc::invalid_argument;
+            return std::nullopt;
+        }
+
+        if (str.starts_with("0x") || str.starts_with("0X")) {
+            base = 16;
+            str.remove_prefix(2);
+        } else if (str.starts_with("0o") || str.starts_with("0O")) {
+            base = 8;
+            str.remove_prefix(2);
+        }  else if (str.starts_with("0b") || str.starts_with("0B")) {
+            base = 2;
+            str.remove_prefix(2);
+        }
+        // 0x-123 and 0x+123 are invalid
+        if (str.starts_with('+') || str.starts_with('-')) {
+            out_err = std::errc::invalid_argument;
+            return std::nullopt;
+        }
+        T value{};
+#if defined(LIBWOLV_BUILTIN_UINT128)
+        const auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), value, base);
+#else
+        const auto [ptr, ec] = [&] {
+            if constexpr (std::same_as<T, wolv::i128> || std::same_as<T, wolv::u128>) {
+                return parseWideInteger(str.data(), str.data() + str.size(), value, base);
+            } else {
+                return std::from_chars(str.data(), str.data() + str.size(), value, base);
+            }
+        }();
+#endif
+        if (ec != std::errc()) {
+            out_err = ec;
+            return std::nullopt;
+        }
+        *str_ptr = ptr;
+        return value;
+    }
+    template<std::floating_point T>
+    [[nodiscard]] std::optional<T> parseNumber(const char** const str_ptr, const char* const end_pos, std::errc& out_err) noexcept {
+        auto str = trim_ascii_start(std::string_view{*str_ptr, end_pos});
+        std::chars_format fmt = std::chars_format::general;
+
+        // minus/plus signs are handled in minus/plus unary operations
+        if (str.starts_with('+') || str.starts_with('-')) {
+            out_err = std::errc::invalid_argument;
+            return std::nullopt;
+        }
+
+        if (str.starts_with("0x") || str.starts_with("0X")) {
+            fmt = std::chars_format::hex;
+            str = str.substr(2);
+        }
+        // 0x-123p0 and 0x+123p0 are invalid
+        if (str.starts_with('+') || str.starts_with('-')) {
+            out_err = std::errc::invalid_argument;
+            return std::nullopt;
+        }
+#if defined(_LIBCPP_VERSION)
+        using FixedT = std::conditional_t<std::same_as<T, long double>, double, T>;
+        FixedT value{}; // libc++ std::from_chars doesn't support T=long double right now
+#else
+        T value{};
+#endif
+        const auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), value, fmt);
+        if (ec != std::errc()) {
+            out_err = ec;
+            return std::nullopt;
+        }
+        *str_ptr = ptr;
+        return value;
+    }
+}
+
+namespace wolv::math_eval {
     template<typename T>
     i16 MathEvaluator<T>::comparePrecedence(const Operator &a, const Operator &b) {
         return (static_cast<i8>(a) & 0x0F0) - (static_cast<i8>(b) & 0x0F0);
@@ -130,26 +273,14 @@ namespace wolv::math_eval {
     std::optional<std::queue<typename MathEvaluator<T>::Token>> MathEvaluator<T>::parseInput(std::string input) {
         std::queue<Token> inputQueue;
 
-        char *prevPos = input.data();
-        for (char *pos = prevPos; *pos != 0x00;) {
-            if (std::isdigit(*pos) || *pos == '.') {
-                auto number = [&] {
-                   if constexpr (std::floating_point<T>)
-                       return std::strtold(pos, &pos);
-                   else if constexpr (std::signed_integral<T> || std::same_as<T, wolv::i128>)
-                       return std::strtoll(pos, &pos, 10);
-                   else if constexpr (std::unsigned_integral<T> || std::same_as<T, wolv::u128>)
-                       return std::strtoull(pos, &pos, 10);
-                   else
-                       static_assert(wolv::util::always_false<T>::value, "Can't parse literal of this type");
-                }();
-
-                if (*pos == 'x') {
-                    pos--;
-                    number = std::strtoull(pos, &pos, 0);
-                }
-
-                inputQueue.push(Token { .type = TokenType::Number, .number = number, .name = "", .arguments = { } });
+        const char *prevPos = input.data();
+        for (const char *pos = prevPos; *pos != '\0';) {
+            std::errc parse_err{};
+            if (const auto number = parseNumber<T>(&pos, input.data() + input.size(), parse_err)) {
+                inputQueue.push(Token { .type = TokenType::Number, .number = *number, .name = "", .arguments = { } });
+            } else if (parse_err == std::errc::result_out_of_range) {
+                this->setError("Number out of range!");
+                return std::nullopt;
             } else if (*pos == '(') {
                 if (!inputQueue.empty() && !(inputQueue.back().type == TokenType::Operator || (inputQueue.back().type == TokenType::Bracket && inputQueue.back().bracketType == BracketType::Left))) {
                     this->setError("Invalid syntax!");
