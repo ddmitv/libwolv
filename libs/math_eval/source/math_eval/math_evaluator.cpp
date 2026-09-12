@@ -338,7 +338,10 @@ namespace wolv::math_eval {
 
                             pos++;
                         }
-
+                        if (*pos == '\0') {
+                            this->setError("Mismatching parenthesis!");
+                            return std::nullopt;
+                        }
                         pos++;
 
                         for (const auto &expression : expressions) {

@@ -730,7 +730,7 @@ TEST_SEQUENCE("Functions")
     TEST_ASSERT(eval.evaluate("sqrt (4)") == std::nullopt);
     TEST_ASSERT(eval.evaluate("sqrt(,4)") == std::nullopt);
     TEST_ASSERT(eval.evaluate("sqrt(4))") == std::nullopt);
-    // TEST_ASSERT(eval.evaluate("sqrt(") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("sqrt(") == std::nullopt);
     TEST_ASSERT(eval.evaluate("sqrt)") == std::nullopt);
     TEST_ASSERT(eval.evaluate("sqrt(1, 2)") == std::nullopt);
     TEST_ASSERT(eval.evaluate("log(1, 2, 3)") == std::nullopt);
