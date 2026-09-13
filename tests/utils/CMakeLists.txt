@@ -17,6 +17,9 @@ set(AVAILABLE_TESTS
     Lock
     
     ThreadPool
+
+    Arith_Checked
+    Arith_Saturating
 )
 
 add_executable(${PROJECT_NAME}
@@ -24,6 +27,7 @@ add_executable(${PROJECT_NAME}
         source/guards.cpp
         source/lock.cpp
         source/thread_pool.cpp
+        source/arith.cpp
 )
 
 # ---- No need to change anything from here downwards unless you know what you're doing ---- #
