@@ -409,7 +409,7 @@ TEST_SEQUENCE("Arithmetic") {
 
         TEST_ASSERT(eval.evaluate("-(1 + 2)") == -3.L);
         TEST_ASSERT(eval.evaluate("+(1 + 2)") == 3.L);
-        TEST_ASSERT(eval.evaluate("--5") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("--5") == 5.L);
         TEST_ASSERT(eval.evaluate("1--2") == 3.L);
         TEST_ASSERT(eval.evaluate("1+-2") == -1.L);
         TEST_ASSERT(eval.evaluate("1-+2") == -1.L);
@@ -434,14 +434,16 @@ TEST_SEQUENCE("Arithmetic") {
     {
         wolv::math_eval::MathEvaluator<i64> eval;
 
-        // TEST_ASSERT(eval.evaluate("9223372036854775807+1") == -9223372036854775807LL - 1LL); // UB!
-        // TEST_ASSERT(eval.evaluate("-9223372036854775807-2") == -9223372036854775807LL - 2LL); // UB!
+        TEST_ASSERT(eval.evaluate("9223372036854775807+1") == -9223372036854775807LL - 1LL);
+        TEST_ASSERT(eval.evaluate("-9223372036854775807-2") == 9223372036854775807LL);
         TEST_ASSERT(eval.evaluate("-9223372036854775807-1") == -9223372036854775807LL - 1LL);
 
-        // TEST_ASSERT(eval.evaluate("(-9223372036854775807-1)*-1") == 0LL); // UB!
-        // TEST_ASSERT(eval.evaluate("(-9223372036854775807-1) % -1") == 0LL); // UB!
-        // TEST_ASSERT(eval.evaluate("(-9223372036854775807-1) / -1") == 0LL); // UB!
-        // TEST_ASSERT(eval.evaluate("9223372036854775807*2") == 0LL); // UB!
+        TEST_ASSERT(eval.evaluate("(-9223372036854775807-1)*-1") == -9223372036854775807LL - 1LL);
+        TEST_ASSERT(eval.evaluate("(-9223372036854775807-1) % -1") == 0LL);
+        TEST_ASSERT(eval.evaluate("(-9223372036854775807-1) / -1") == -9223372036854775807LL - 1LL); // /%
+        TEST_ASSERT(eval.evaluate("9223372036854775807*2") == -2LL);
+
+        TEST_ASSERT(eval.evaluate("-(-9223372036854775807-1)") == -9223372036854775807LL - 1LL);
 
         TEST_ASSERT(eval.evaluate("-5 / 2") == -2);
         TEST_ASSERT(eval.evaluate("5 / -2") == -2);
@@ -472,8 +474,8 @@ TEST_SEQUENCE("Arithmetic") {
         TEST_ASSERT(eval.evaluate("5 % 3") == 2);
 
         TEST_ASSERT(eval.evaluate("2 ** -1") == 0);
-        TEST_ASSERT(eval.evaluate("12345 ** -3") == 17317727759540968665ULL); // bug
-        TEST_ASSERT(eval.evaluate("12345 ** -123") == 3916649491026205593ULL); // bug
+        TEST_ASSERT(eval.evaluate("12345 ** -3") == 17317727759540968665ULL);
+        TEST_ASSERT(eval.evaluate("12345 ** -123") == 3916649491026205593ULL);
     }
 
     {
@@ -482,7 +484,7 @@ TEST_SEQUENCE("Arithmetic") {
         TEST_ASSERT(eval.evaluate("9223372036854775807+1") == 9223372036854775808_i128);
         TEST_ASSERT(eval.evaluate("-9223372036854775807-1") == -9223372036854775808_i128);
 
-        // TEST_ASSERT(eval.evaluate("9223372036854775807*9223372036854775807*9223372036854775807") == 85070591730234615893513767968506380287_i128); // UB!
+        TEST_ASSERT(eval.evaluate("9223372036854775807*9223372036854775807*9223372036854775807") == 85070591730234615893513767968506380287_i128);
         TEST_ASSERT(eval.evaluate("9223372036854775807*2") == 18446744073709551614_i128);
         TEST_ASSERT(eval.evaluate("9223372036854775808*2") == 18446744073709551616_i128);
         TEST_ASSERT(eval.evaluate("99999999999999999999999999*2") == 199999999999999999999999998_i128);
@@ -504,9 +506,9 @@ TEST_SEQUENCE("Arithmetic") {
         TEST_ASSERT(eval.evaluate("18446744073709551615*2") == 36893488147419103230_u128);
 
         TEST_ASSERT(eval.evaluate("2 ** -1") == 0);
-        TEST_ASSERT(eval.evaluate("3 ** -3") == 252061012534028491454351561060569045523_u128); // bug
-        TEST_ASSERT(eval.evaluate("12345 ** -3") == 317573833925137075581670601247388622041_u128); // bug
-        TEST_ASSERT(eval.evaluate("12345 ** -123") == 243236865493588613981336659141491743641_u128); // bug
+        TEST_ASSERT(eval.evaluate("3 ** -3") == 252061012534028491454351561060569045523_u128);
+        TEST_ASSERT(eval.evaluate("12345 ** -3") == 317573833925137075581670601247388622041_u128);
+        TEST_ASSERT(eval.evaluate("12345 ** -123") == 243236865493588613981336659141491743641_u128);
     }
 
     TEST_SUCCESS();
@@ -548,16 +550,16 @@ TEST_SEQUENCE("LogicalOperations") {
 
         TEST_ASSERT(eval.evaluate("1 ^^ 0") == 1);
         TEST_ASSERT(eval.evaluate("1 ^^ 1") == 0);
-        TEST_ASSERT(eval.evaluate("1 ^^ 4") == 1); // bug
+        TEST_ASSERT(eval.evaluate("1 ^^ 4") == 0);
 
         TEST_ASSERT(eval.evaluate("1==") == std::nullopt);
         TEST_ASSERT(eval.evaluate("==2") == std::nullopt);
 
-        TEST_ASSERT(eval.evaluate("1~") == 18446744073709551614ULL); // bug
-        TEST_ASSERT(eval.evaluate("123~~") == 123); // bug
-        TEST_ASSERT(eval.evaluate("2!") == 0); // bug
-        TEST_ASSERT(eval.evaluate("0!") == 1); // bug
-        TEST_ASSERT(eval.evaluate("0!!") == 0); // bug
+        TEST_ASSERT(eval.evaluate("1~") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("123~~") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("2!") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("0!") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("0!!") == std::nullopt);
     }
 
     {
@@ -565,16 +567,17 @@ TEST_SEQUENCE("LogicalOperations") {
 
         TEST_ASSERT(eval.evaluate("!0") == 1.L);
         TEST_ASSERT(eval.evaluate("!(-1)") == 0.L);
-        TEST_ASSERT(eval.evaluate("!-1") == std::nullopt); // bug
+        TEST_ASSERT(eval.evaluate("!-1") == 0.L);
         TEST_ASSERT(eval.evaluate("!2") == 0.L);
-        TEST_ASSERT(eval.evaluate("!0.5") == 1.L); // bug?
-        TEST_ASSERT(eval.evaluate("!0.99") == 1.L); // bug?
+        TEST_ASSERT(eval.evaluate("!0.5") == 0.L);
+        TEST_ASSERT(eval.evaluate("!0.99") == 0.L);
         TEST_ASSERT(eval.evaluate("!1") == 0.L);
-        TEST_ASSERT(eval.evaluate("!1.5") == 0.L); // bug?
+        TEST_ASSERT(eval.evaluate("!1.5") == 0.L);
 
-        TEST_ASSERT(eval.evaluate("1 && 0.5") == 0); // bug?
+        TEST_ASSERT(eval.evaluate("1 && 0") == 0);
+        TEST_ASSERT(eval.evaluate("1 && 0.5") == 1);
         TEST_ASSERT(eval.evaluate("1 && 1") == 1);
-        TEST_ASSERT(eval.evaluate("1 && 1.5") == 1); // bug?
+        TEST_ASSERT(eval.evaluate("1 && 1.5") == 1);
     }
 
     {
@@ -583,68 +586,89 @@ TEST_SEQUENCE("LogicalOperations") {
         TEST_ASSERT(eval.evaluate("!0") == 1.L);
         TEST_ASSERT(eval.evaluate("!2") == 0.L);
         TEST_ASSERT(eval.evaluate("!18446744073709551615") == 0.L);
-        TEST_ASSERT(eval.evaluate("!(18446744073709551615+1)") == 1.L); // bug
+        TEST_ASSERT(eval.evaluate("!(18446744073709551615+1)") == 0.L);
 
         TEST_ASSERT(eval.evaluate("1 && 18446744073709551615") == 1);
-        TEST_ASSERT(eval.evaluate("1 && (18446744073709551615+1)") == 0); // bug
+        TEST_ASSERT(eval.evaluate("1 && (18446744073709551615+1)") == 1);
         TEST_ASSERT(eval.evaluate("18446744073709551615 && 1") == 1);
-        TEST_ASSERT(eval.evaluate("(18446744073709551615+1) && 1") == 0); // bug
+        TEST_ASSERT(eval.evaluate("(18446744073709551615+1) && 1") == 1);
 
         TEST_ASSERT(eval.evaluate("0 || 2") == 1);
         TEST_ASSERT(eval.evaluate("0 || 0") == 0);
         TEST_ASSERT(eval.evaluate("0 || 18446744073709551615") == 1);
-        TEST_ASSERT(eval.evaluate("0 || (18446744073709551615+1)") == 0); // bug
+        TEST_ASSERT(eval.evaluate("0 || (18446744073709551615+1)") == 1);
 
-        TEST_ASSERT(eval.evaluate("1 ^^ (18446744073709551615+1)") == 1); // bug
-        TEST_ASSERT(eval.evaluate("1 ^^ (18446744073709551615+2)") == 0); // bug
+        TEST_ASSERT(eval.evaluate("1 ^^ (18446744073709551615+1)") == 0);
+        TEST_ASSERT(eval.evaluate("1 ^^ (18446744073709551615+2)") == 0);
     }
 
     TEST_SUCCESS();
 };
 
 TEST_SEQUENCE("BitwiseOperations") {
-    wolv::math_eval::MathEvaluator<u128> eval;
+    {
+        wolv::math_eval::MathEvaluator<u128> eval;
 
-    TEST_ASSERT(eval.evaluate("5 & 3") == 1);
-    TEST_ASSERT(eval.evaluate("9223372036854775807 & 9223372036854775807") == 9223372036854775807_u128);
-    TEST_ASSERT(eval.evaluate("9223372036854775808 & 9223372036854775808") == 340282366920938463454151235394913435648_u128); // bug
-    TEST_ASSERT(eval.evaluate("18446744073709551615 & 18446744073709551615") == 340282366920938463463374607431768211455_u128); // bug
-    TEST_ASSERT(eval.evaluate("(18446744073709551615+1) & (18446744073709551615+1)") == 0); // bug
+        TEST_ASSERT(eval.evaluate("5 & 3") == 1);
+        TEST_ASSERT(eval.evaluate("9223372036854775807 & 9223372036854775807") == 9223372036854775807_u128);
+        TEST_ASSERT(eval.evaluate("9223372036854775808 & 9223372036854775808") == 9223372036854775808_u128);
+        TEST_ASSERT(eval.evaluate("18446744073709551615 & 18446744073709551615") == 18446744073709551615_u128);
+        TEST_ASSERT(eval.evaluate("(18446744073709551615+1) & (18446744073709551615+1)") == 18446744073709551616_u128);
 
-    TEST_ASSERT(eval.evaluate("5 | 3") == 7);
-    TEST_ASSERT(eval.evaluate("0 | 18446744073709551615") == 340282366920938463463374607431768211455_u128); // bug
-    TEST_ASSERT(eval.evaluate("0 | (18446744073709551615+1)") == 0); // bug
+        TEST_ASSERT(eval.evaluate("5 | 3") == 7);
+        TEST_ASSERT(eval.evaluate("0 | 18446744073709551615") == 18446744073709551615_u128);
+        TEST_ASSERT(eval.evaluate("0 | (18446744073709551615+1)") == 18446744073709551616_u128);
 
-    TEST_ASSERT(eval.evaluate("5 ^ 3") == 6);
-    TEST_ASSERT(eval.evaluate("0 ^ 18446744073709551615") == 340282366920938463463374607431768211455_u128); // bug
-    TEST_ASSERT(eval.evaluate("0 ^ (18446744073709551615+1)") == 0); // bug
+        TEST_ASSERT(eval.evaluate("5 ^ 3") == 6);
+        TEST_ASSERT(eval.evaluate("0 ^ 18446744073709551615") == 18446744073709551615_u128);
+        TEST_ASSERT(eval.evaluate("0 ^ (18446744073709551615+1)") == 18446744073709551616_u128);
 
-    TEST_ASSERT(eval.evaluate("~0") == 340282366920938463463374607431768211455_u128);
-    TEST_ASSERT(eval.evaluate("~1") == 340282366920938463463374607431768211454_u128);
-    TEST_ASSERT(eval.evaluate("~9223372036854775807") == 340282366920938463454151235394913435648_u128);
-    TEST_ASSERT(eval.evaluate("~9223372036854775808") == 9223372036854775807_u128); // bug
-    TEST_ASSERT(eval.evaluate("~18446744073709551615") == 0); // bug
-    TEST_ASSERT(eval.evaluate("~(18446744073709551615+1)") == 340282366920938463463374607431768211455_u128); // bug
+        TEST_ASSERT(eval.evaluate("~0") == 340282366920938463463374607431768211455_u128);
+        TEST_ASSERT(eval.evaluate("~1") == 340282366920938463463374607431768211454_u128);
+        TEST_ASSERT(eval.evaluate("~9223372036854775807") == 340282366920938463454151235394913435648_u128);
+        TEST_ASSERT(eval.evaluate("~9223372036854775808") == 340282366920938463454151235394913435647_u128);
+        TEST_ASSERT(eval.evaluate("~18446744073709551615") == 340282366920938463444927863358058659840_u128);
+        TEST_ASSERT(eval.evaluate("~(18446744073709551615+1)") == 340282366920938463444927863358058659839_u128);
 
-    TEST_ASSERT(eval.evaluate("1 << 4") == 16);
-    // TEST_ASSERT(eval.evaluate("2 << -1") == std::nullopt); // UB!
-    // TEST_ASSERT(eval.evaluate("1 << 64") == 1); // UB!
-    // TEST_ASSERT(eval.evaluate("1024 << 63") == 9444732965739290427392_u128); // bug
+        TEST_ASSERT(eval.evaluate("1 << 4") == 16);
+        TEST_ASSERT(eval.evaluate("2 << -1") == 0);
+        TEST_ASSERT(eval.evaluate("1 << 64") == 18446744073709551616_u128);
+        TEST_ASSERT(eval.evaluate("1024 << 63") == 9444732965739290427392_u128);
 
-    TEST_ASSERT(eval.evaluate("12345678 >> 4") == 771604);
-    TEST_ASSERT(eval.evaluate("-123 >> 10") == -1); // bug
-    // TEST_ASSERT(eval.evaluate("2 >> -1") == std::nullopt); // UB!
-    // TEST_ASSERT(eval.evaluate("12345678 >> 64") == 771604); // UB!
-    TEST_ASSERT(eval.evaluate("((18446744073709551615+1)*1234) >> 0") == 0); // bug
-    TEST_ASSERT(eval.evaluate("((18446744073709551615+1)*1234) >> 30") == 0); // bug
+        TEST_ASSERT(eval.evaluate("12345678 >> 4") == 771604);
+        TEST_ASSERT(eval.evaluate("-123 >> 10") == 332306998946228968225951765070086143_u128);
+        TEST_ASSERT(eval.evaluate("2 >> -1") == 0);
+        TEST_ASSERT(eval.evaluate("12345678 >> 64") == 0);
+        TEST_ASSERT(eval.evaluate("((18446744073709551615+1)*1234) >> 0") == 22763282186957586694144_u128);
+        TEST_ASSERT(eval.evaluate("((18446744073709551615+1)*1234) >> 30") == 21199958573056_u128);
 
-    TEST_ASSERT(eval.evaluate("2 ## 5") == 21);
-    TEST_ASSERT(eval.evaluate("18446744073709551615 ## 0") == 18446744073709551615ULL);
-    // TEST_ASSERT(eval.evaluate("0 ## 18446744073709551615") == 18446744073709551615ULL); // UB!
-    // TEST_ASSERT(eval.evaluate("0 ## -1") == 18446744073709551615ULL); // UB!
-    TEST_ASSERT(eval.evaluate("(18446744073709551615+1) ## 0") == 0); // bug
-    TEST_ASSERT(eval.evaluate("0 ## (18446744073709551615+1)") == 0); // bug
-    TEST_ASSERT(eval.evaluate("1125899906842624 ## 1073741824") == 1073741824ULL); // bug
+        TEST_ASSERT(eval.evaluate("2 ## 5") == 21);
+        TEST_ASSERT(eval.evaluate("0b1010101 ## 0b10001") == 0b1010101'10001);
+        TEST_ASSERT(eval.evaluate("18446744073709551615 ## 0") == 18446744073709551615ULL);
+        TEST_ASSERT(eval.evaluate("0 ## 18446744073709551615") == 18446744073709551615ULL);
+        TEST_ASSERT(eval.evaluate("0 ## -1") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("(18446744073709551615+1) ## 0") == 18446744073709551616_u128);
+        TEST_ASSERT(eval.evaluate("0 ## (18446744073709551615+1)") == 18446744073709551616_u128);
+        TEST_ASSERT(eval.evaluate("1125899906842624 ## 1073741824") == 2417851639229259423154176_u128);
+    }
+
+    {
+        wolv::math_eval::MathEvaluator<i64> eval;
+
+        TEST_ASSERT(eval.evaluate("1 << 63") == -9223372036854775807LL - 1LL);
+        TEST_ASSERT(eval.evaluate("9223372036854775807 >> 63") == 0);
+        TEST_ASSERT(eval.evaluate("(-9223372036854775807-1) >> 63") == -1);
+    }
+
+    {
+        wolv::math_eval::MathEvaluator<long double> eval;
+
+        TEST_ASSERT(eval.evaluate("NaN | 0") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("Inf & -Inf") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("1e100 | 0") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("-1e100 | 0") == std::nullopt);
+    }
+
 
     TEST_SUCCESS();
 };
@@ -657,9 +681,9 @@ TEST_SEQUENCE("Variables")
 
         TEST_ASSERT(eval.evaluate("ans") == 0.L);
 
-        TEST_ASSERT(eval.evaluate("pi") == std::numbers::pi); // should be std::numbers::pi_v<long double>
-        TEST_ASSERT(eval.evaluate("e") == std::numbers::e); // should be std::numbers::e_v<long double>
-        TEST_ASSERT(eval.evaluate("phi") == std::numbers::phi); // should be std::numbers::phi_v<long double>
+        TEST_ASSERT(eval.evaluate("pi") == std::numbers::pi_v<long double>);
+        TEST_ASSERT(eval.evaluate("e") == std::numbers::e_v<long double>);
+        TEST_ASSERT(eval.evaluate("phi") == std::numbers::phi_v<long double>);
 
         TEST_ASSERT(eval.evaluate("2pi") == std::nullopt);
         TEST_ASSERT(eval.evaluate("pi e") == std::nullopt);
@@ -673,9 +697,9 @@ TEST_SEQUENCE("Variables")
 
         TEST_ASSERT(eval.evaluate("ans") == 0);
 
-        TEST_ASSERT(eval.evaluate("pi") == 3); // bug
-        TEST_ASSERT(eval.evaluate("e") == 2); // bug
-        TEST_ASSERT(eval.evaluate("phi") == 1); // bug
+        TEST_ASSERT(eval.evaluate("pi") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("e") == std::nullopt);
+        TEST_ASSERT(eval.evaluate("phi") == std::nullopt);
     }
 
     TEST_SUCCESS();
@@ -687,6 +711,9 @@ TEST_SEQUENCE("Functions")
     eval.registerStandardFunctions();
     eval.registerStandardVariables();
 
+    TEST_ASSERT(eval.evaluate("(") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("(1") == std::nullopt);
+    TEST_ASSERT(eval.evaluate("(1+") == std::nullopt);
     TEST_ASSERT(eval.evaluate("abc()") == std::nullopt);
     TEST_ASSERT(eval.evaluate("abc(1)") == std::nullopt);
 
@@ -720,7 +747,8 @@ TEST_SEQUENCE("Functions")
     TEST_ASSERT(eval.evaluate("sqrt(0)") == 0.L);
     TEST_ASSERT(expect_approx_eq(eval.evaluate("-sqrt(4)"), -2.L));
     TEST_ASSERT(expect_nan(eval.evaluate("sqrt(-1)")));
-    // TEST_ASSERT(eval.evaluate("sqrt(-1) && 1") == std::nullopt); // UB! (casting NaN to integer type)
+    TEST_ASSERT(eval.evaluate("sqrt(-1) && 1") == 1);
+    TEST_ASSERT(eval.evaluate("sqrt(-1) & 1") == std::nullopt);
 
     TEST_ASSERT(eval.evaluate("ln(1)") == 0.L);
     TEST_ASSERT(expect_nan(eval.evaluate("ln(-123)")));
@@ -784,10 +812,10 @@ TEST_SEQUENCE("ComplexExpressions") {
         eval.registerStandardFunctions();
 
         TEST_ASSERT(expect_approx_eq(eval.evaluate("-sqrt(abs(-16)) + lb(1024) * 2 ** (1 + floor(1.9)) - ceil(0.1)"), 35.L));
-        TEST_ASSERT(eval.evaluate("(0xFF & 0x0F) ## (0x01 << 2) | (0x01 << 7)") == 252.L);
-        TEST_ASSERT(eval.evaluate("( (5 % 2 == 1) && (3 ** 2 > 8) ) * 10 + ( !(~0 == -1) + -(-5 % 3) )") == 12.L);
+        TEST_ASSERT(eval.evaluate("((0xFF & 0x0F) ## (0x01 << 2)) | (0x01 << 7)") == 252.L);
+        TEST_ASSERT(eval.evaluate("( (5 % 2 == 1) && (3 ** 2 > 8) ) * 10 + ( !(~0 == -1) + -(-5 % 3) )") == 13.L);
         TEST_ASSERT(eval.evaluate("sqrt(1.44e2) + 0x1.8p3 * sign(-3e-100)") == 0.L);
-        TEST_ASSERT(eval.evaluate("( (3 != 4) + (5 <= 5) ) ## abs(floor(-9.9)) + ( (1 << 3) | (15 ^ 10) ) * 2 ** (10 % 3) / ~(-2) - 5") == 63.L);
+        TEST_ASSERT(eval.evaluate("( (3 != 4) + (5 <= 5) ) ## abs(floor(-9.9)) + ( (1 << 3) | (15 ^ 10) ) * 2 ** (10 % 3) / 1 - 5") == 63.L);
     }
 
     {

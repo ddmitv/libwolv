@@ -16,24 +16,40 @@
 #include <limits>
 #include <string_view>
 
+// https://stackoverflow.com/a/64843863
+#if (-1 & 3) != 3
+#error "Requires integer two's complement support"
+#endif
+
 namespace
 {
-    using wolv::u8;
+    using wolv::u8, wolv::i64;
+
+    template<typename T>
+    struct my_make_unsigned { using type = std::make_unsigned_t<T>; };
+    template<>
+    struct my_make_unsigned<wolv::i128> { using type = wolv::u128; };
+    template<>
+    struct my_make_unsigned<wolv::u128> { using type = wolv::u128; };
+
+    template<class T>
+    using my_make_unsigned_t = my_make_unsigned<T>::type;
 
     template<typename T, typename U>
     [[nodiscard]] auto powi(T base, U exp) {
         using ResultType = decltype(T{} * U{});
+        using Unsigned = my_make_unsigned_t<ResultType>;
 
-        if (exp < 0)
+        if (exp < 0) {
             return ResultType(0);
-
+        }
         ResultType result = 1;
-
         while (exp != 0) {
-            if ((exp & 0b1) == 0b1)
-                result *= base;
-            exp >>= 1;
-            base *= base;
+            if ((exp & 1u) == 1) {
+                result = ResultType(Unsigned(result) * Unsigned(base));
+            }
+            exp >>= 1u;
+            base = T(Unsigned(base) * Unsigned(base));
         }
         return result;
     }
@@ -170,6 +186,16 @@ namespace
         *str_ptr = ptr;
         return value;
     }
+
+    template<std::integral Result = i64, std::floating_point T>
+    [[nodiscard]] std::optional<Result> safe_to_integer(const T x) noexcept {
+        if (std::isnan(x)) { return std::nullopt; }
+
+        if (x < T(std::numeric_limits<Result>::min()) || x > T(std::numeric_limits<Result>::max())) {
+            return std::nullopt;
+        }
+        return static_cast<Result>(x);
+    }
 }
 
 namespace wolv::math_eval {
@@ -230,7 +256,12 @@ namespace wolv::math_eval {
             if (currToken.type == TokenType::Number || currToken.type == TokenType::Variable || currToken.type == TokenType::Function)
                 outputQueue.push(currToken);
             else if (currToken.type == TokenType::Operator) {
-                while ((!operatorStack.empty()) && ((operatorStack.top().type == TokenType::Operator && currToken.type == TokenType::Operator && (comparePrecedence(operatorStack.top().op, currToken.op) > 0)) || (comparePrecedence(operatorStack.top().op, currToken.op) == 0 && isLeftAssociative(currToken.op))) && operatorStack.top().type != TokenType::Bracket) {
+                const bool currIsRightAssoc = isUnary(currToken.op) || !isLeftAssociative(currToken.op);
+
+                while (!operatorStack.empty() && operatorStack.top().type == TokenType::Operator) {
+                    const auto prec = comparePrecedence(operatorStack.top().op, currToken.op);
+                    if (prec <= 0 && (prec != 0 || currIsRightAssoc)) { break; }
+
                     outputQueue.push(operatorStack.top());
                     operatorStack.pop();
                 }
@@ -307,14 +338,21 @@ namespace wolv::math_eval {
             } else {
                 auto [op, width] = toOperator(pos);
 
-                if (inputQueue.empty() || inputQueue.back().type == TokenType::Operator || (inputQueue.back().type == TokenType::Bracket && inputQueue.back().bracketType == BracketType::Left)) {
-                    if (op == Operator::Addition)
-                        op = Operator::Plus;
-                    else if (op == Operator::Subtraction)
-                        op = Operator::Minus;
-                }
-
                 if (op != Operator::Invalid) {
+                    const bool valueExpected = inputQueue.empty()
+                        || inputQueue.back().type == TokenType::Operator
+                        || (inputQueue.back().type == TokenType::Bracket && inputQueue.back().bracketType == BracketType::Left);
+
+                    if (valueExpected) {
+                        if (op == Operator::Addition) {
+                            op = Operator::Plus;
+                        } else if (op == Operator::Subtraction) {
+                            op = Operator::Minus;
+                        }
+                    } else if (isUnary(op)) {
+                        this->setError("Unexpected unary operator!");
+                        return std::nullopt;
+                    }
                     inputQueue.push(Token { .type = TokenType::Operator, .op = op, .name = "", .arguments = { } });
                     pos += width;
                 } else {
@@ -443,80 +481,160 @@ namespace wolv::math_eval {
                     }
                 }
 
-                T result = [] {
-                   if constexpr (std::numeric_limits<T>::has_quiet_NaN)
-                       return std::numeric_limits<T>::quiet_NaN();
-                   else
-                       return 0;
-                }();
+                T result{};
                 switch (front.op) {
                     default:
                     case Operator::Invalid:
                         this->setError("Invalid operator!");
                         return std::nullopt;
                     case Operator::And:
-                        result = static_cast<i64>(leftOperand) && static_cast<i64>(rightOperand);
+                        result = T(static_cast<bool>(leftOperand) && static_cast<bool>(rightOperand));
                         break;
                     case Operator::Or:
-                        result = static_cast<i64>(leftOperand) || static_cast<i64>(rightOperand);
+                        result = T(static_cast<bool>(leftOperand) || static_cast<bool>(rightOperand));
                         break;
                     case Operator::Xor:
-                        result = (static_cast<i64>(leftOperand) ^ static_cast<i64>(rightOperand)) > 0;
+                        result = T(static_cast<bool>(leftOperand) != static_cast<bool>(rightOperand));
                         break;
                     case Operator::GreaterThan:
-                        result = leftOperand > rightOperand;
+                        result = T(leftOperand > rightOperand);
                         break;
                     case Operator::LessThan:
-                        result = leftOperand < rightOperand;
+                        result = T(leftOperand < rightOperand);
                         break;
                     case Operator::GreaterThanOrEquals:
-                        result = leftOperand >= rightOperand;
+                        result = T(leftOperand >= rightOperand);
                         break;
                     case Operator::LessThanOrEquals:
-                        result = leftOperand <= rightOperand;
+                        result = T(leftOperand <= rightOperand);
                         break;
                     case Operator::Equals:
-                        result = leftOperand == rightOperand;
+                        result = T(leftOperand == rightOperand);
                         break;
                     case Operator::NotEquals:
-                        result = leftOperand != rightOperand;
+                        result = T(leftOperand != rightOperand);
                         break;
                     case Operator::Not:
-                        result = !static_cast<i64>(rightOperand);
+                        result = T(!static_cast<bool>(rightOperand));
                         break;
                     case Operator::BitwiseOr:
-                        result = static_cast<i64>(leftOperand) | static_cast<i64>(rightOperand);
+                        if constexpr (std::floating_point<T>) {
+                            // using u64 since using bitwise operations with floating point numbers is already error-prone and unintuitive,
+                            // and making them behave like signed integers (two's complement) is just too much
+                            const auto left = safe_to_integer<u64>(leftOperand);
+                            const auto right = safe_to_integer<u64>(rightOperand);
+                            if (!left.has_value() || !right.has_value()) {
+                                this->setError("Bitwise OR operator (|) operand conversion overflow!");
+                                return std::nullopt;
+                            }
+                            result = static_cast<T>(*left | *right);
+                        } else {
+                            result = leftOperand | rightOperand;
+                        }
                         break;
                     case Operator::BitwiseXor:
-                        result = static_cast<i64>(leftOperand) ^ static_cast<i64>(rightOperand);
+                        if constexpr (std::floating_point<T>) {
+                            const auto left = safe_to_integer<u64>(leftOperand);
+                            const auto right = safe_to_integer<u64>(rightOperand);
+                            if (!left.has_value() || !right.has_value()) {
+                                this->setError("Bitwise XOR operator (^) operand conversion overflow!");
+                                return std::nullopt;
+                            }
+                            result = static_cast<T>(*left ^ *right);
+                        } else {
+                            result = leftOperand ^ rightOperand;
+                        }
                         break;
                     case Operator::BitwiseAnd:
-                        result = static_cast<i64>(leftOperand) & static_cast<i64>(rightOperand);
+                        if constexpr (std::floating_point<T>) {
+                            const auto left = safe_to_integer<u64>(leftOperand);
+                            const auto right = safe_to_integer<u64>(rightOperand);
+                            if (!left.has_value() || !right.has_value()) {
+                                this->setError("Bitwise AND operator (&) operand conversion overflow!");
+                                return std::nullopt;
+                            }
+                            result = static_cast<T>(*left & *right);
+                        } else {
+                            result = leftOperand & rightOperand;
+                        }
                         break;
                     case Operator::BitwiseNot:
-                        result = ~static_cast<i64>(rightOperand);
+                        if constexpr (std::floating_point<T>) {
+                            const auto operand = safe_to_integer<u64>(rightOperand);
+                            if (!operand.has_value()) {
+                                this->setError("Bitwise NOT operator (~) operand conversion overflow!");
+                                return std::nullopt;
+                            }
+                            result = static_cast<T>(~(*operand));
+                        } else {
+                            result = ~rightOperand;
+                        }
                         break;
                     case Operator::ShiftLeft:
-                        result = static_cast<i64>(leftOperand) << static_cast<i64>(rightOperand);
+                        if constexpr (std::floating_point<T>) {
+                            const auto left = safe_to_integer<u64>(leftOperand);
+                            const auto right = safe_to_integer<u64>(rightOperand);
+                            if (!left.has_value() || !right.has_value()) {
+                                this->setError("Left shift operator (<<) operand conversion overflow!");
+                                return std::nullopt;
+                            }
+                            result = *right >= 64 ? T(0) : static_cast<T>(*left << *right);
+                        } else {
+                            // not UB for negative left operands since C++20
+                            constexpr auto maxShift = std::numeric_limits<my_make_unsigned_t<T>>::digits;
+                            result = (rightOperand < 0 || rightOperand >= maxShift) ? T(0) : leftOperand << static_cast<u32>(rightOperand);
+                        }
                         break;
                     case Operator::ShiftRight:
-                        result = static_cast<i64>(leftOperand) >> static_cast<i64>(rightOperand);
+                        if constexpr (std::floating_point<T>) {
+                            const auto left = safe_to_integer<u64>(leftOperand);
+                            const auto right = safe_to_integer<u64>(rightOperand);
+                            if (!left.has_value() || !right.has_value()) {
+                                this->setError("Right shift operator (>>) operand conversion overflow!");
+                                return std::nullopt;
+                            }
+                            result = *right >= 64 ? T(0) : static_cast<T>(*left >> *right);
+                        } else {
+                            // not UB for negative left operands since C++20
+                            constexpr auto maxShift = std::numeric_limits<my_make_unsigned_t<T>>::digits;
+                            result = (rightOperand < 0 || rightOperand >= maxShift) ? T(0) : leftOperand >> static_cast<u32>(rightOperand);
+                        }
                         break;
                     case Operator::Addition:
-                        result = leftOperand + rightOperand;
+                        if constexpr (std::signed_integral<T>) {
+                            using Unsigned = my_make_unsigned_t<T>;
+                            result = static_cast<T>(static_cast<Unsigned>(leftOperand) + static_cast<Unsigned>(rightOperand));
+                        } else {
+                            result = leftOperand + rightOperand;
+                        }
                         break;
                     case Operator::Subtraction:
-                        result = leftOperand - rightOperand;
+                        if constexpr (std::signed_integral<T>) {
+                            using Unsigned = my_make_unsigned_t<T>;
+                            result = static_cast<T>(static_cast<Unsigned>(leftOperand) - static_cast<Unsigned>(rightOperand));
+                        } else {
+                            result = leftOperand - rightOperand;
+                        }
                         break;
                     case Operator::Multiplication:
-                        result = leftOperand * rightOperand;
+                        if constexpr (std::signed_integral<T>) {
+                            using Unsigned = my_make_unsigned_t<T>;
+                            result = static_cast<T>(static_cast<Unsigned>(leftOperand) * static_cast<Unsigned>(rightOperand));
+                        } else {
+                            result = leftOperand * rightOperand;
+                        }
                         break;
                     case Operator::Division:
                         if (rightOperand == 0) {
                             this->setError("Division by Zero!");
                             return std::nullopt;
                         }
-
+                        if constexpr (std::signed_integral<T>) {
+                            if (leftOperand == std::numeric_limits<T>::min() && rightOperand == T(-1)) {
+                                result = leftOperand;
+                                break;
+                            }
+                        }
                         result = leftOperand / rightOperand;
                         break;
                     case Operator::Modulus:
@@ -524,7 +642,12 @@ namespace wolv::math_eval {
                             this->setError("Division by Zero!");
                             return std::nullopt;
                         }
-
+                        if constexpr (std::signed_integral<T>) {
+                            if (leftOperand == std::numeric_limits<T>::min() && rightOperand == T(-1)) {
+                                result = 0;
+                                break;
+                            }
+                        }
                         if constexpr (std::floating_point<T>)
                             result = std::fmod(leftOperand, rightOperand);
                         else
@@ -537,13 +660,46 @@ namespace wolv::math_eval {
                             result = powi(leftOperand, rightOperand);
                         break;
                     case Operator::Combine:
-                        result = (static_cast<u64>(leftOperand) << (64 - std::countl_zero(static_cast<u64>(rightOperand)))) | static_cast<u64>(rightOperand);
+                        if constexpr (std::floating_point<T>) {
+                            const auto left = safe_to_integer<u64>(leftOperand);
+                            const auto right = safe_to_integer<u64>(rightOperand);
+                            if (!left.has_value() || !right.has_value()) {
+                                this->setError("Combine operator (##) operand conversion overflow!");
+                                return std::nullopt;
+                            }
+                            const u32 shift = static_cast<u32>(std::bit_width(*right));
+                            if (shift >= 64) {
+                                this->setError("Combine operator (##) overflow!");
+                                return std::nullopt;
+                            }
+                            result = static_cast<T>((*left << shift) | *right);
+                        } else {
+                            using Unsigned = my_make_unsigned_t<T>;
+                            const auto left = static_cast<Unsigned>(leftOperand);
+                            const auto right = static_cast<Unsigned>(rightOperand);
+                            // cannot use std::bit_width since T may be wolv::i128 or wolv::u128
+                            u32 shift = 0;
+                            for (Unsigned tmp = right; tmp != 0; tmp >>= 1u) {
+                                shift += 1;
+                            }
+                            if (shift >= std::numeric_limits<Unsigned>::digits) {
+                                this->setError("Combine operator (##) overflow!");
+                                return std::nullopt;
+                            }
+                            result = static_cast<T>((left << shift) | right);
+                        }
                         break;
                     case Operator::Plus:
-                        result = +rightOperand;
+                        result = rightOperand;
                         break;
                     case Operator::Minus:
-                        result = -rightOperand;
+                        if constexpr (std::signed_integral<T>) {
+                            // negation of std::numeric_limits<T>::min() is UB for signed integers
+                            using Unsigned = my_make_unsigned_t<T>;
+                            result = static_cast<T>(-static_cast<Unsigned>(rightOperand));
+                        } else {
+                            result = -rightOperand;
+                        }
                         break;
                 }
 
@@ -642,9 +798,12 @@ namespace wolv::math_eval {
     template<typename T>
     void MathEvaluator<T>::registerStandardVariables() {
         this->setVariable("ans", 0);
-        this->setVariable("pi", std::numbers::pi, true);
-        this->setVariable("e", std::numbers::e, true);
-        this->setVariable("phi", std::numbers::phi, true);
+
+        if constexpr (std::floating_point<T>) {
+            this->setVariable("pi", std::numbers::pi_v<T>, true);
+            this->setVariable("e", std::numbers::e_v<T>, true);
+            this->setVariable("phi", std::numbers::phi_v<T>, true);
+        }
     }
 
     template<typename T>
